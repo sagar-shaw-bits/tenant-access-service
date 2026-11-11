@@ -1,0 +1,478 @@
+openapi: 3.0.3
+info:
+  title: Tenant Access Service API
+  version: 1.0.0
+  description: Tenant-scoped user management, roles, permissions, and authentication.
+servers:
+  - url: http://localhost:8080/api/v1
+paths:
+  /auth/login:
+    post:
+      summary: Log in to a tenant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, tenant_code]
+              properties:
+                email: {type: string, format: email}
+                password: {type: string, format: password}
+                tenant_code: {type: string}
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /auth/platform-login:
+    post:
+      summary: Log in as a platform administrator
+      description: Requires an operator-granted platform_admins record. Returns a platform token without tenant claims.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: {type: string, format: email}
+                password: {type: string, format: password}
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /auth/refresh:
+    post:
+      summary: Issue a new access token for the refresh token's tenant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: {type: string}
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /platform/users/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    patch:
+      security: [{bearerAuth: []}]
+      summary: Update a global user identity
+      description: Requires a platform-access token. Tenant admins use PATCH /users/{id}, which is rejected when the identity has active memberships in multiple tenants.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: {type: string, format: email, maxLength: 255}
+                password: {type: string, format: password, minLength: 8, maxLength: 72}
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /tenants:
+    get:
+      security: [{bearerAuth: []}]
+      summary: List tenants
+      description: Tenant admins receive only their authenticated tenant and require tenant:read. Platform admins can list all tenants with pagination.
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      security: [{bearerAuth: []}]
+      summary: Create a tenant with its first tenant administrator
+      description: Platform-admin token required. Tenant, initial user/membership, tenant-admin role, permissions, and audit records are created atomically.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, code, admin_email, admin_password]
+              properties:
+                name: {type: string, maxLength: 150}
+                code: {type: string, maxLength: 50}
+                admin_email: {type: string, format: email, maxLength: 255}
+                admin_password: {type: string, format: password, minLength: 8, maxLength: 72}
+      responses:
+        '201': {$ref: '#/components/responses/Success'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /tenants/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    get:
+      security: [{bearerAuth: []}]
+      summary: Get a tenant
+      description: Tenant admins may access only their token tenant and require tenant:read. Platform admins may access any tenant.
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      security: [{bearerAuth: []}]
+      summary: Update a tenant
+      description: Tenant admins may update only their token tenant and require tenant:update. Platform admins may update any tenant.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, code, status]
+              properties:
+                name: {type: string, maxLength: 150}
+                code: {type: string, maxLength: 50}
+                status: {type: string, enum: [active, suspended]}
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /users:
+    get:
+      security: [{bearerAuth: []}]
+      summary: List users belonging to the authenticated tenant
+      description: Requires user:read.
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+        - in: query
+          name: email
+          schema: {type: string}
+          description: Case-insensitive email prefix filter.
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      security: [{bearerAuth: []}]
+      summary: Create a global user and membership in the authenticated tenant
+      description: Requires user:create. Password is bcrypt-hashed and never returned.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: {type: string, format: email, maxLength: 255}
+                password: {type: string, format: password, minLength: 8, maxLength: 72}
+      responses:
+        '201': {$ref: '#/components/responses/Success'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /users/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    get:
+      security: [{bearerAuth: []}]
+      summary: Get a user in the authenticated tenant
+      description: Requires user:read.
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      security: [{bearerAuth: []}]
+      summary: Update a user
+      description: Requires user:update. Changes global login credentials; returns 409 if the identity has active memberships in multiple tenants. Platform admins can use PATCH /platform/users/{id}.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: {type: string, format: email}
+                password: {type: string, format: password, minLength: 8, maxLength: 72}
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+    delete:
+      security: [{bearerAuth: []}]
+      summary: Deactivate the user's membership in the authenticated tenant
+      description: Requires user:delete. The shared global identity and memberships in other tenants remain active. Role assignments in this tenant are removed.
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /users/{id}/membership:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    post:
+      security: [{bearerAuth: []}]
+      summary: Add an existing global user to the authenticated tenant
+      description: The request must not contain a tenant ID. A previously deactivated membership is reactivated without restoring role assignments.
+      responses:
+        '201': {$ref: '#/components/responses/Success'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /users/{id}/roles:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    put:
+      security: [{bearerAuth: []}]
+      summary: Replace roles assigned to a user's authenticated-tenant membership
+      description: Requires assignment:manage.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role_ids]
+              properties:
+                role_ids: {type: array, items: {type: string, format: uuid}}
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    delete:
+      security: [{bearerAuth: []}]
+      summary: Remove selected role assignments from a membership
+      description: Requires assignment:manage.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role_ids]
+              properties:
+                role_ids: {type: array, minItems: 1, items: {type: string, format: uuid}}
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /roles:
+    get:
+      security: [{bearerAuth: []}]
+      summary: List roles for the authenticated tenant
+      description: Requires role:read.
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+        - in: query
+          name: name
+          schema: {type: string}
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      security: [{bearerAuth: []}]
+      summary: Create a role in the authenticated tenant
+      description: Requires role:create.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: {type: string, maxLength: 100}
+      responses:
+        '201': {$ref: '#/components/responses/Success'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /roles/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    get:
+      security: [{bearerAuth: []}]
+      summary: Get a tenant-scoped role
+      description: Requires role:read.
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      security: [{bearerAuth: []}]
+      summary: Rename a tenant-scoped role
+      description: Requires role:update.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: {type: string, maxLength: 100}
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+    delete:
+      security: [{bearerAuth: []}]
+      summary: Delete a role and its assignments/mappings transactionally
+      description: Requires role:delete.
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /permissions:
+    get:
+      security: [{bearerAuth: []}]
+      summary: List seeded permission definitions
+      description: Requires permission:read.
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+        - in: query
+          name: resource
+          schema: {type: string}
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /roles/{id}/permissions:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    get:
+      security: [{bearerAuth: []}]
+      summary: List permission mappings for a tenant-scoped role
+      description: Requires permission:read.
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    put:
+      security: [{bearerAuth: []}]
+      summary: Replace permission mappings for a tenant-scoped role
+      description: Requires permission:map.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [permission_ids]
+              properties:
+                permission_ids: {type: array, items: {type: string, format: uuid}}
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+components:
+  parameters:
+    ID:
+      in: path
+      name: id
+      required: true
+      schema: {type: string, format: uuid}
+    Limit:
+      in: query
+      name: limit
+      schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+    Offset:
+      in: query
+      name: offset
+      schema: {type: integer, minimum: 0, default: 0}
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    Success:
+      description: Successful operation
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [success, data, message]
+            properties:
+              success: {type: boolean, example: true}
+              data: {type: object}
+              message: {type: string}
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Unauthorized:
+      description: Missing, invalid, expired, or inactive authentication
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Forbidden:
+      description: Authenticated but not permitted
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    NotFound:
+      description: Resource not available in the authenticated tenant
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Conflict:
+      description: Duplicate or conflicting resource
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    InternalError:
+      description: Unexpected server error
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+  schemas:
+    Error:
+      type: object
+      required: [success, error]
+      properties:
+        success: {type: boolean, example: false}
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: {type: string}
+            message: {type: string}

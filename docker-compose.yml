@@ -1,0 +1,48 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      APP_ENV: development
+      APP_PORT: 8080
+      JWT_SECRET: ${JWT_SECRET:-local-compose-development-secret-change-me}
+      JWT_ISSUER: tenant-access-service
+      JWT_AUDIENCE: tenant-access-service
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: tenant_access_service
+      DB_SSLMODE: disable
+      DB_MAX_CONNS: 25
+      DB_MIN_CONNS: 5
+      DB_ACQUIRE_TIMEOUT: 5s
+      DB_MAX_CONN_LIFETIME: 30m
+      DB_MAX_IDLE_TIME: 10m
+      PERMISSION_CACHE_TTL: 5m
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: tenant_access_service
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d tenant_access_service"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
